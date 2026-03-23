@@ -94,3 +94,5 @@ Partial persistence — visited URLs are saved per job; the queue is not persist
 - Back pressure drops URLs (lossy); it does not block the producer
 - Resume is partial: visited URLs are persisted, but the queue is not
 - URL canonicalization is intentionally minimal: www-prefix and trailing-slash normalization only
+
+The repository includes a small sample index under data/storage/ so the raw storage format and search behavior can be inspected immediately.
