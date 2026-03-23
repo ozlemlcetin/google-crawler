@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Crawler Status</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #0f0f0f;
+      color: #e8e8e8;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ── Nav ── */
+    nav {
+      display: flex;
+      align-items: center;
+      gap: 2rem;
+      padding: 1rem 2rem;
+      border-bottom: 1px solid #222;
+      background: #141414;
+    }
+    nav .brand { font-size: 1.1rem; font-weight: 700; color: #fff; text-decoration: none; }
+    nav a { color: #888; text-decoration: none; font-size: 0.9rem; transition: color .15s; }
+    nav a:hover, nav a.active { color: #fff; }
+
+    /* ── Layout ── */
+    main { flex: 1; padding: 2rem; max-width: 960px; margin: 0 auto; width: 100%; }
+
+    h1 { font-size: 1.4rem; font-weight: 700; margin-bottom: 0.3rem; }
+    .crawler-id { font-size: 0.78rem; color: #555; font-family: monospace; margin-bottom: 2rem; }
+
+    /* ── Stat grid ── */
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 1rem;
+      margin-bottom: 2rem;
+    }
+    .stat {
+      background: #1a1a1a;
+      border: 1px solid #2a2a2a;
+      border-radius: 10px;
+      padding: 1.2rem 1.4rem;
+    }
+    .stat .label { font-size: 0.75rem; color: #666; text-transform: uppercase; letter-spacing: .05em; margin-bottom: 0.5rem; }
+    .stat .value { font-size: 1.8rem; font-weight: 700; line-height: 1; }
+    .stat.highlight .value { color: #4f8ef7; }
+
+    /* Status badge */
+    .status-badge {
+      display: inline-block;
+      font-size: 0.8rem;
+      font-weight: 700;
+      padding: 0.3rem 0.8rem;
+      border-radius: 99px;
+      text-transform: uppercase;
+      letter-spacing: .05em;
+    }
+    .status-badge.running { background: #0d2a1a; color: #4caf7d; animation: pulse 2s infinite; }
+    .status-badge.done    { background: #1a1a2a; color: #7c9cf4; }
+    .status-badge.error   { background: #2a0d0d; color: #f47c7c; }
+    .status-badge.pending { background: #1a1a1a; color: #888; }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0.6; }
+    }
+
+    /* Back pressure indicator */
+    .bp-off { color: #4caf7d; }
+    .bp-on  { color: #f4a24c; font-weight: 700; }
+
+    /* ── Progress bar ── */
+    .progress-wrap {
+      background: #1a1a1a;
+      border: 1px solid #2a2a2a;
+      border-radius: 10px;
+      padding: 1.2rem 1.4rem;
+      margin-bottom: 2rem;
+    }
+    .progress-wrap .label { font-size: 0.78rem; color: #666; text-transform: uppercase; letter-spacing: .05em; margin-bottom: 0.75rem; }
+    .bar-track {
+      height: 8px;
+      background: #252525;
+      border-radius: 4px;
+      overflow: hidden;
+    }
+    .bar-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #4f8ef7, #7c5cf4);
+      border-radius: 4px;
+      transition: width .4s ease;
+      width: 0%;
+    }
+    .progress-labels {
+      display: flex;
+      justify-content: space-between;
+      margin-top: 0.4rem;
+      font-size: 0.78rem;
+      color: #555;
+    }
+
+    /* ── Log console ── */
+    .log-section { margin-top: 0.5rem; }
+    .log-section h2 { font-size: 0.8rem; color: #555; text-transform: uppercase; letter-spacing: .05em; margin-bottom: 0.75rem; }
+    #logBox {
+      background: #111;
+      border: 1px solid #222;
+      border-radius: 8px;
+      padding: 1rem;
+      height: 340px;
+      overflow-y: auto;
+      font-family: "SF Mono", "Fira Code", monospace;
+      font-size: 0.78rem;
+      line-height: 1.6;
+      color: #aaa;
+    }
+    .log-line { display: flex; gap: 0.75rem; }
+    .log-line .ts  { color: #444; min-width: 80px; }
+    .log-line .ev  { color: #7c9cf4; min-width: 140px; }
+    .log-line .dat { color: #888; word-break: break-all; }
+
+    /* ── Action row ── */
+    .actions { display: flex; gap: 1rem; margin-top: 1.5rem; flex-wrap: wrap; align-items: center; }
+    .btn {
+      padding: 0.55rem 1.2rem;
+      border-radius: 6px;
+      font-size: 0.88rem;
+      font-weight: 600;
+      cursor: pointer;
+      border: none;
+      transition: opacity .15s;
+      text-decoration: none;
+      display: inline-block;
+    }
+    .btn:hover { opacity: 0.85; }
+    .btn-primary { background: #4f8ef7; color: #fff; }
+    .btn-outline { background: transparent; border: 1px solid #333; color: #aaa; }
+
+    /* ── Recent jobs panel ── */
+    .jobs-panel { margin-top: 2rem; }
+    .jobs-panel h3 { font-size: 0.8rem; color: #555; text-transform: uppercase; letter-spacing: .05em; margin-bottom: 0.6rem; }
+    .job-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.55rem 0.85rem;
+      background: #161616;
+      border: 1px solid #222;
+      border-radius: 8px;
+      margin-bottom: 0.4rem;
+      font-size: 0.83rem;
+    }
+    .job-row .j-origin { color: #aaa; max-width: 340px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .job-badge {
+      font-size: 0.7rem; font-weight: 600; padding: 0.18rem 0.5rem;
+      border-radius: 99px; text-transform: uppercase; letter-spacing: .03em;
+    }
+    .job-badge.running { background: #0d2a1a; color: #4caf7d; }
+    .job-badge.done    { background: #1a1a2a; color: #7c9cf4; }
+    .job-badge.error   { background: #2a0d0d; color: #f47c7c; }
+    .job-badge.stopped { background: #1a1a1a; color: #888; }
+    .job-badge.pending { background: #1a1a1a; color: #888; }
+    .j-link { color: #4f8ef7; text-decoration: none; font-size: 0.78rem; margin-left: 0.6rem; }
+    .j-link:hover { text-decoration: underline; }
+
+    /* ── Connection badge ── */
+    .conn-badge {
+      font-size: 0.78rem;
+      font-weight: 600;
+      padding: 0.25rem 0.7rem;
+      border-radius: 99px;
+      letter-spacing: .04em;
+    }
+    .conn-badge.live          { background: #0d2a1a; color: #4caf7d; }
+    .conn-badge.reconnecting  { background: #2a2000; color: #f4c24c; }
+    .conn-badge.finished      { background: #1a1a2a; color: #888; }
+    .conn-badge.badge-error   { background: #2a0d0d; color: #f47c7c; }
+  </style>
+</head>
+<body>
+
+<nav>
+  <a href="/" class="brand">&#9670; Crawler</a>
+  <a href="/">New Crawl</a>
+  <a href="/search">Search</a>
+  <a href="#" class="active" id="navStatus">Status</a>
+</nav>
+
+<main>
+  <h1>Crawl Job Monitor</h1>
+  <p class="crawler-id" id="crawlerIdLabel">Loading…</p>
+
+  <div class="stats">
+    <div class="stat">
+      <div class="label">Status</div>
+      <div class="value" id="statStatus"><span class="status-badge pending">pending</span></div>
+    </div>
+    <div class="stat highlight">
+      <div class="label">URLs Processed</div>
+      <div class="value" id="statProcessed">0</div>
+    </div>
+    <div class="stat">
+      <div class="label">Queue Depth</div>
+      <div class="value" id="statQueue">0</div>
+    </div>
+    <div class="stat">
+      <div class="label">Back Pressure</div>
+      <div class="value" id="statBP"><span class="bp-off">Off</span></div>
+    </div>
+    <div class="stat">
+      <div class="label">Origin</div>
+      <div class="value" id="statOrigin" style="font-size:.85rem;word-break:break-all;color:#aaa;">—</div>
+    </div>
+    <div class="stat">
+      <div class="label">Max Depth</div>
+      <div class="value" id="statDepth">—</div>
+    </div>
+    <div class="stat">
+      <div class="label">URLs / sec</div>
+      <div class="value" id="statUPS">0</div>
+    </div>
+  </div>
+
+  <div class="progress-wrap">
+    <div class="label">Queue fill level (max <span id="queueMax">500</span>)</div>
+    <div class="bar-track"><div class="bar-fill" id="queueBar"></div></div>
+    <div class="progress-labels">
+      <span id="queueBarLabel">0 / 500</span>
+      <span id="queuePct">0%</span>
+    </div>
+  </div>
+
+  <div class="log-section">
+    <h2>Live log</h2>
+    <div id="logBox"><span style="color:#444">Waiting for log entries…</span></div>
+  </div>
+
+  <div class="actions">
+    <a href="/search" class="btn btn-primary">Search Index &rarr;</a>
+    <a href="/" class="btn btn-outline">New Crawl</a>
+    <button id="btnStop" class="btn btn-stop" style="display:none;background:#7c2020;color:#fff;" onclick="stopCrawl()">Stop Crawl</button>
+    <span id="connectionBadge" class="conn-badge reconnecting">○ Connecting…</span>
+  </div>
+
+  <div class="jobs-panel">
+    <h3>Recent Jobs</h3>
+    <div id="recentJobs"><p style="color:#444;font-size:.82rem;">Loading…</p></div>
+  </div>
+</main>
+
+<script>
+  // crawler_id is parsed from the URL path (injected by Flask routing)
+  const crawlerId = window.location.pathname.split("/").pop();
+  let logIndex = 0;
+  let isFinished = false;
+
+  document.getElementById("crawlerIdLabel").textContent = `Job ID: ${crawlerId}`;
+
+  // Persist this crawler_id so the Status nav link works from other pages
+  localStorage.setItem("lastCrawlerId", crawlerId);
+  document.getElementById("navStatus").href = `/status/${crawlerId}`;
+
+  // ── Connection badge ────────────────────────────────────────────────────────
+  function setBadge(state) {
+    const badge = document.getElementById("connectionBadge");
+    const map = {
+      live:         { text: "● Live",           cls: "live" },
+      reconnecting: { text: "○ Reconnecting...", cls: "reconnecting" },
+      finished:     { text: "■ Finished",        cls: "finished" },
+      error:        { text: "■ Error",           cls: "badge-error" },
+    };
+    const cfg = map[state] || map.reconnecting;
+    badge.textContent = cfg.text;
+    badge.className = `conn-badge ${cfg.cls}`;
+  }
+
+  // ── Helpers ─────────────────────────────────────────────────────────────────
+  function fmtTime(ts) {
+    const d = new Date(ts * 1000);
+    return d.toLocaleTimeString([], { hour12: false });
+  }
+
+  function isTerminal(status) {
+    return status === "done" || status === "stopped" || status === "error";
+  }
+
+  // ── Stats update (called from stats poll loop) ───────────────────────────────
+  function updateStats(data) {
+    const s = data.status || "pending";
+    document.getElementById("statStatus").innerHTML =
+      `<span class="status-badge ${s}">${s}</span>`;
+
+    document.getElementById("statProcessed").textContent = data.urls_processed ?? 0;
+    document.getElementById("statQueue").textContent     = data.queue_depth ?? 0;
+
+    const bp = data.back_pressure_active;
+    document.getElementById("statBP").innerHTML = bp
+      ? '<span class="bp-on">Active ⚠</span>'
+      : '<span class="bp-off">Off</span>';
+
+    document.getElementById("statOrigin").textContent = data.origin_url || "—";
+    document.getElementById("statDepth").textContent  = data.max_depth  ?? "—";
+    document.getElementById("statUPS").textContent    = data.urls_per_second ?? 0;
+
+    document.getElementById("btnStop").style.display = (s === "running") ? "inline-block" : "none";
+
+    const maxQ = data.max_queue_size ?? 500;
+    const qd   = Math.min(data.queue_depth ?? 0, maxQ);
+    const pct  = Math.round((qd / maxQ) * 100);
+    document.getElementById("queueMax").textContent = maxQ;
+    document.getElementById("queueBar").style.width = pct + "%";
+    document.getElementById("queueBarLabel").textContent = `${qd} / ${maxQ}`;
+    document.getElementById("queuePct").textContent = pct + "%";
+  }
+
+  // ── Log append (called from log poll loop) ───────────────────────────────────
+  function appendLogs(logs) {
+    const box = document.getElementById("logBox");
+    const wasAtBottom = box.scrollHeight - box.clientHeight <= box.scrollTop + 8;
+
+    if (box.querySelector("span[style]")) box.innerHTML = "";  // clear placeholder
+
+    logs.forEach(entry => {
+      const line = document.createElement("div");
+      line.className = "log-line";
+      const dataStr = entry.data && Object.keys(entry.data).length
+        ? JSON.stringify(entry.data)
+        : "";
+      line.innerHTML = `
+        <span class="ts">${fmtTime(entry.timestamp)}</span>
+        <span class="ev">${entry.event}</span>
+        <span class="dat">${dataStr}</span>
+      `;
+      box.appendChild(line);
+    });
+
+    if (wasAtBottom) box.scrollTop = box.scrollHeight;
+  }
+
+  // ── Loop A: Stats poll (every 1 second via /api/crawl/{id}/status) ───────────
+  async function pollStats() {
+    if (isFinished) return;
+    try {
+      const res  = await fetch(`/api/crawl/${crawlerId}/status`);
+      const data = await res.json();
+      if (!res.ok) {
+        setBadge("reconnecting");
+        setTimeout(pollStats, 3000);
+        return;
+      }
+      setBadge("live");
+      updateStats(data);
+      if (isTerminal(data.status)) {
+        isFinished = true;
+        setBadge(data.status === "error" ? "error" : "finished");
+        return;
+      }
+    } catch (_err) {
+      setBadge("reconnecting");
+    }
+    if (!isFinished) setTimeout(pollStats, 1000);
+  }
+
+  // ── Loop B: Log poll (long-poll via /api/status/poll/{id}?since=N) ───────────
+  async function pollLogs() {
+    if (isFinished) return;
+    try {
+      const res  = await fetch(`/api/status/poll/${crawlerId}?since=${logIndex}`);
+      const data = await res.json();
+      if (res.ok) {
+        if (data.new_logs && data.new_logs.length) {
+          appendLogs(data.new_logs);
+          logIndex = data.log_index;
+        }
+        if (isTerminal(data.status)) {
+          isFinished = true;
+          // pollStats won't run again after isFinished is set, so sync
+          // the stat cards one final time before we stop.
+          try {
+            const sr = await fetch(`/api/crawl/${crawlerId}/status`);
+            if (sr.ok) {
+              const sd = await sr.json();
+              updateStats(sd);
+              setBadge(sd.status === "error" ? "error" : "finished");
+            }
+          } catch (_) {}
+          return;
+        }
+      }
+    } catch (_err) {
+      // transient network error — retry shortly
+    }
+    // Long-poll holds ~20 s server-side; immediately re-poll on return
+    if (!isFinished) setTimeout(pollLogs, 100);
+  }
+
+  // ── Stop button ──────────────────────────────────────────────────────────────
+  async function stopCrawl() {
+    const btn = document.getElementById("btnStop");
+    btn.disabled = true;
+    btn.textContent = "Stopping…";
+    try {
+      await fetch(`/api/crawl/${crawlerId}/stop`, { method: "POST" });
+      // Kick off an immediate stats poll so the UI catches up without
+      // waiting for the next scheduled 1-second interval.
+      if (!isFinished) {
+        isFinished = false;  // ensure pollStats doesn't bail early
+        pollStats();
+      }
+    } catch (err) {
+      console.error("Stop failed:", err);
+      btn.disabled = false;
+      btn.textContent = "Stop Crawl";
+    }
+  }
+
+  // ── Recent jobs panel ────────────────────────────────────────────────────────
+  async function loadRecentJobs() {
+    try {
+      const res  = await fetch("/api/crawl/list");
+      const data = await res.json();
+      const jobs = (data.jobs || []).slice(0, 8);
+      const el = document.getElementById("recentJobs");
+      if (!jobs.length) {
+        el.innerHTML = '<p style="color:#444;font-size:.82rem;">No jobs found.</p>';
+        return;
+      }
+      el.innerHTML = jobs.map(j => `
+        <div class="job-row">
+          <span class="j-origin" title="${j.origin_url}">${j.origin_url}</span>
+          <span>
+            <span class="job-badge ${j.status}">${j.status}</span>
+            <a class="j-link" href="/status/${j.crawler_id}">Monitor &rarr;</a>
+          </span>
+        </div>
+      `).join("");
+    } catch {
+      document.getElementById("recentJobs").innerHTML = '<p style="color:#444;font-size:.82rem;">Could not load jobs.</p>';
+    }
+  }
+
+  // Start both loops independently
+  pollStats();
+  pollLogs();
+  loadRecentJobs();
+  // Refresh jobs list every 10 s so a new job started elsewhere shows up
+  setInterval(loadRecentJobs, 10000);
+</script>
+</body>
+</html>

@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Search — Google in a Day</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #0f0f0f;
+      color: #e8e8e8;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ── Nav ── */
+    nav {
+      display: flex;
+      align-items: center;
+      gap: 2rem;
+      padding: 1rem 2rem;
+      border-bottom: 1px solid #222;
+      background: #141414;
+    }
+    nav .brand { font-size: 1.1rem; font-weight: 700; color: #fff; text-decoration: none; }
+    nav a { color: #888; text-decoration: none; font-size: 0.9rem; transition: color .15s; }
+    nav a:hover, nav a.active { color: #fff; }
+
+    /* ── Search bar area ── */
+    .search-header {
+      padding: 2.5rem 2rem 1.5rem;
+      max-width: 760px;
+      margin: 0 auto;
+      width: 100%;
+    }
+    .search-header h1 { font-size: 1.5rem; font-weight: 800; margin-bottom: 1.25rem; }
+    .search-header h1 span { color: #4f8ef7; }
+
+    .search-bar {
+      display: flex;
+      gap: 0.6rem;
+    }
+    .search-bar input {
+      flex: 1;
+      background: #1a1a1a;
+      border: 1px solid #333;
+      border-radius: 8px;
+      color: #e8e8e8;
+      font-size: 1rem;
+      padding: 0.7rem 1rem;
+      outline: none;
+      transition: border-color .15s;
+    }
+    .search-bar input:focus { border-color: #4f8ef7; }
+    .search-bar button {
+      padding: 0.7rem 1.4rem;
+      background: #4f8ef7;
+      color: #fff;
+      font-size: 0.95rem;
+      font-weight: 600;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: background .15s;
+      white-space: nowrap;
+    }
+    .search-bar button:hover { background: #3a7de0; }
+    .search-bar button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    /* ── Results area ── */
+    main {
+      flex: 1;
+      max-width: 760px;
+      margin: 0 auto;
+      width: 100%;
+      padding: 0 2rem 3rem;
+    }
+
+    /* Meta line */
+    #metaLine {
+      font-size: 0.8rem;
+      color: #555;
+      margin-bottom: 1.25rem;
+      min-height: 1.2em;
+    }
+    #metaLine strong { color: #888; }
+
+    /* Empty / error states */
+    .state-msg {
+      text-align: center;
+      padding: 4rem 1rem;
+      color: #444;
+      font-size: 0.95rem;
+    }
+    .state-msg .icon { font-size: 2.5rem; margin-bottom: 0.75rem; }
+
+    /* ── Result card ── */
+    .result-card {
+      background: #1a1a1a;
+      border: 1px solid #252525;
+      border-radius: 10px;
+      padding: 1rem 1.25rem;
+      margin-bottom: 0.75rem;
+      transition: border-color .15s;
+    }
+    .result-card:hover { border-color: #4f8ef7; }
+
+    .result-card .url-line {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      margin-bottom: 0.35rem;
+      flex-wrap: wrap;
+    }
+    .result-card .url {
+      font-size: 0.88rem;
+      color: #4f8ef7;
+      text-decoration: none;
+      word-break: break-all;
+    }
+    .result-card .url:hover { text-decoration: underline; }
+
+    .result-card .pills { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+    .pill {
+      font-size: 0.7rem;
+      padding: 0.15rem 0.5rem;
+      border-radius: 99px;
+      background: #222;
+      color: #666;
+      white-space: nowrap;
+    }
+    .pill.depth  { color: #7c9cf4; }
+    .pill.score  { color: #4caf7d; }
+
+    .result-card .origin {
+      font-size: 0.78rem;
+      color: #444;
+      margin-top: 0.25rem;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    /* ── Pagination ── */
+    .pagination {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      margin-top: 2rem;
+      flex-wrap: wrap;
+    }
+    .page-btn {
+      min-width: 36px;
+      height: 36px;
+      padding: 0 0.6rem;
+      border: 1px solid #2a2a2a;
+      border-radius: 6px;
+      background: #1a1a1a;
+      color: #aaa;
+      font-size: 0.88rem;
+      cursor: pointer;
+      transition: all .15s;
+    }
+    .page-btn:hover:not(:disabled) { border-color: #4f8ef7; color: #fff; }
+    .page-btn.active { background: #4f8ef7; border-color: #4f8ef7; color: #fff; font-weight: 700; }
+    .page-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+
+    /* ── Recent jobs panel ── */
+    .jobs-panel { margin-top: 2rem; }
+    .jobs-panel h3 { font-size: 0.78rem; color: #555; text-transform: uppercase; letter-spacing: .05em; margin-bottom: 0.6rem; }
+    .job-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.55rem 0.85rem;
+      background: #161616;
+      border: 1px solid #222;
+      border-radius: 8px;
+      margin-bottom: 0.4rem;
+      font-size: 0.83rem;
+    }
+    .job-row .j-origin { color: #aaa; max-width: 400px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .job-badge {
+      font-size: 0.7rem; font-weight: 600; padding: 0.18rem 0.5rem;
+      border-radius: 99px; text-transform: uppercase; letter-spacing: .03em;
+    }
+    .job-badge.running { background: #0d2a1a; color: #4caf7d; }
+    .job-badge.done    { background: #1a1a2a; color: #7c9cf4; }
+    .job-badge.error   { background: #2a0d0d; color: #f47c7c; }
+    .job-badge.stopped { background: #1a1a1a; color: #888; }
+    .job-badge.pending { background: #1a1a1a; color: #888; }
+    .j-link { color: #4f8ef7; text-decoration: none; font-size: 0.78rem; margin-left: 0.6rem; }
+    .j-link:hover { text-decoration: underline; }
+
+    /* Loading spinner */
+    .spinner {
+      display: inline-block;
+      width: 16px; height: 16px;
+      border: 2px solid #333;
+      border-top-color: #4f8ef7;
+      border-radius: 50%;
+      animation: spin .6s linear infinite;
+      vertical-align: middle;
+      margin-right: 0.4rem;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+
+<nav>
+  <a href="/" class="brand">&#9670; Crawler</a>
+  <a href="/">New Crawl</a>
+  <a href="/search" class="active">Search</a>
+  <a href="#" id="navStatus" style="display:none">Status</a>
+</nav>
+
+<div class="search-header">
+  <h1>Search <span>the index</span></h1>
+  <p style="color:#555;font-size:0.82rem;margin-bottom:0.75rem;">Searches across all indexed data from every crawl job, not just the last one.</p>
+  <form class="search-bar" id="searchForm">
+    <input
+      id="queryInput"
+      type="text"
+      placeholder="Enter keywords…"
+      autocomplete="off"
+      autofocus
+    />
+    <button type="submit" id="searchBtn">Search</button>
+  </form>
+</div>
+
+<main>
+  <div id="metaLine"></div>
+  <div id="results">
+    <div class="state-msg">
+      <div class="icon">&#128269;</div>
+      <div>Enter a query above to search the crawled index.</div>
+    </div>
+  </div>
+  <div class="pagination" id="pagination"></div>
+
+  <div class="jobs-panel">
+    <h3>Recent Jobs</h3>
+    <div id="recentJobs"><p style="color:#444;font-size:.82rem;">Loading…</p></div>
+  </div>
+</main>
+
+<script>
+  let currentQuery    = "";
+  let currentPage     = 1;
+  const PER_PAGE      = 20;
+
+  // Restore Status nav link if we have a known crawler_id
+  (function () {
+    const last = localStorage.getItem("lastCrawlerId");
+    const navStatus = document.getElementById("navStatus");
+    if (last) {
+      navStatus.href = `/status/${last}`;
+      navStatus.style.display = "";
+    }
+  })();
+
+  const form          = document.getElementById("searchForm");
+  const queryInput    = document.getElementById("queryInput");
+  const searchBtn     = document.getElementById("searchBtn");
+  const resultsEl     = document.getElementById("results");
+  const metaEl        = document.getElementById("metaLine");
+  const paginationEl  = document.getElementById("pagination");
+
+  // Populate query from URL on load (?q=...)
+  const urlParams = new URLSearchParams(window.location.search);
+  if (urlParams.get("q")) {
+    queryInput.value = urlParams.get("q");
+    currentPage = parseInt(urlParams.get("page") || "1", 10);
+    runSearch(urlParams.get("q"), currentPage);
+  }
+
+  form.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const q = queryInput.value.trim();
+    if (!q) return;
+    currentPage = 1;
+    runSearch(q, 1);
+  });
+
+  async function runSearch(q, page) {
+    currentQuery = q;
+    currentPage  = page;
+
+    // Update browser URL without reload
+    const newUrl = `/search?q=${encodeURIComponent(q)}&page=${page}`;
+    window.history.pushState({}, "", newUrl);
+
+    searchBtn.disabled = true;
+    metaEl.innerHTML   = '<span class="spinner"></span>Searching…';
+    resultsEl.innerHTML = "";
+    paginationEl.innerHTML = "";
+
+    try {
+      const res  = await fetch(`/api/search?q=${encodeURIComponent(q)}&page=${page}&per_page=${PER_PAGE}`);
+      const data = await res.json();
+
+      if (!res.ok) {
+        metaEl.textContent = "";
+        resultsEl.innerHTML = `<div class="state-msg"><div class="icon">⚠</div><div>${data.error || "Search failed."}</div></div>`;
+        return;
+      }
+
+      renderMeta(data, q);
+      renderResults(data.results || []);
+      renderPagination(data.total_pages, page, q);
+
+    } catch (err) {
+      metaEl.textContent = "";
+      resultsEl.innerHTML = `<div class="state-msg"><div class="icon">⚠</div><div>Network error: ${err.message}</div></div>`;
+    } finally {
+      searchBtn.disabled = false;
+    }
+  }
+
+  function renderMeta(data, q) {
+    if (data.total === 0) {
+      metaEl.innerHTML = `No results for <strong>"${escHtml(q)}"</strong>.`;
+      return;
+    }
+    const start = (data.page - 1) * data.per_page + 1;
+    const end   = Math.min(data.page * data.per_page, data.total);
+    metaEl.innerHTML =
+      `Showing <strong>${start}–${end}</strong> of <strong>${data.total}</strong> results ` +
+      `for <strong>"${escHtml(q)}"</strong> &mdash; ${data.elapsed_ms} ms`;
+  }
+
+  function renderResults(results) {
+    if (!results.length) {
+      resultsEl.innerHTML = `<div class="state-msg"><div class="icon">&#128269;</div><div>No results found.</div></div>`;
+      return;
+    }
+
+    resultsEl.innerHTML = results.map(r => {
+      const score     = Math.round(r.relevance_score ?? 0);
+      const depth     = r.depth ?? 0;
+      const originUrl = r.origin_url || "";
+      const url       = r.relevant_url || "";
+
+      return `
+        <div class="result-card">
+          <div class="url-line">
+            <a class="url" href="${escAttr(url)}" target="_blank" rel="noopener">${escHtml(url)}</a>
+          </div>
+          <div class="pills">
+            <span class="pill score">relevance: ${score}</span>
+            <span class="pill depth">depth: ${depth}</span>
+            ${originUrl ? `<span class="pill">origin: ${escHtml(truncate(originUrl, 50))}</span>` : ""}
+          </div>
+        </div>
+      `;
+    }).join("");
+  }
+
+  function renderPagination(totalPages, current, q) {
+    if (totalPages <= 1) { paginationEl.innerHTML = ""; return; }
+
+    const buttons = [];
+
+    // Prev
+    buttons.push(pageBtn("&larr;", current - 1, current <= 1, false, q, "Prev"));
+
+    // Page numbers: always show first, last, and a window around current
+    const pages = new Set();
+    pages.add(1);
+    pages.add(totalPages);
+    for (let i = Math.max(1, current - 2); i <= Math.min(totalPages, current + 2); i++) pages.add(i);
+
+    let prev = 0;
+    Array.from(pages).sort((a, b) => a - b).forEach(p => {
+      if (prev && p - prev > 1) {
+        buttons.push(`<span style="color:#444;align-self:center">…</span>`);
+      }
+      buttons.push(pageBtn(p, p, false, p === current, q));
+      prev = p;
+    });
+
+    // Next
+    buttons.push(pageBtn("&rarr;", current + 1, current >= totalPages, false, q, "Next"));
+
+    paginationEl.innerHTML = buttons.join("");
+  }
+
+  function pageBtn(label, page, disabled, active, q, ariaLabel) {
+    const cls = ["page-btn", active ? "active" : ""].join(" ").trim();
+    const dis = disabled ? "disabled" : "";
+    const handler = disabled ? "" : `onclick="runSearch('${escAttr(q)}', ${page})"`;
+    return `<button class="${cls}" ${dis} ${handler} aria-label="${ariaLabel || label}">${label}</button>`;
+  }
+
+  function escHtml(s) {
+    return String(s)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
+  function escAttr(s) {
+    return String(s).replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+  }
+
+  function truncate(s, n) {
+    return s.length > n ? s.slice(0, n) + "…" : s;
+  }
+
+  async function loadRecentJobs() {
+    try {
+      const res  = await fetch("/api/crawl/list");
+      const data = await res.json();
+      const jobs = (data.jobs || []).slice(0, 8);
+      const el = document.getElementById("recentJobs");
+      if (!jobs.length) {
+        el.innerHTML = '<p style="color:#444;font-size:.82rem;">No crawl jobs yet.</p>';
+        return;
+      }
+      el.innerHTML = jobs.map(j => `
+        <div class="job-row">
+          <span class="j-origin" title="${escHtml(j.origin_url)}">${escHtml(j.origin_url)}</span>
+          <span>
+            <span class="job-badge ${escAttr(j.status)}">${escHtml(j.status)}</span>
+            <a class="j-link" href="/status/${escAttr(j.crawler_id)}">Monitor &rarr;</a>
+          </span>
+        </div>
+      `).join("");
+    } catch {
+      document.getElementById("recentJobs").innerHTML = '<p style="color:#444;font-size:.82rem;">Could not load jobs.</p>';
+    }
+  }
+
+  loadRecentJobs();
+  // Refresh the jobs list every 10 seconds so a newly started crawl shows up
+  setInterval(loadRecentJobs, 10000);
+</script>
+</body>
+</html>

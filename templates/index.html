@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Google in a Day — Start Crawl</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #0f0f0f;
+      color: #e8e8e8;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ── Nav ── */
+    nav {
+      display: flex;
+      align-items: center;
+      gap: 2rem;
+      padding: 1rem 2rem;
+      border-bottom: 1px solid #222;
+      background: #141414;
+    }
+    nav .brand { font-size: 1.1rem; font-weight: 700; color: #fff; text-decoration: none; }
+    nav a { color: #888; text-decoration: none; font-size: 0.9rem; transition: color .15s; }
+    nav a:hover, nav a.active { color: #fff; }
+
+    /* ── Hero ── */
+    .hero {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 4rem 1rem;
+      gap: 0.5rem;
+    }
+    .hero h1 { font-size: 2.8rem; font-weight: 800; letter-spacing: -1px; }
+    .hero h1 span { color: #4f8ef7; }
+    .hero p { color: #666; font-size: 1rem; margin-bottom: 2rem; }
+
+    /* ── Card ── */
+    .card {
+      width: 100%;
+      max-width: 540px;
+      background: #1a1a1a;
+      border: 1px solid #2a2a2a;
+      border-radius: 12px;
+      padding: 2rem;
+    }
+    .card h2 { font-size: 1rem; font-weight: 600; color: #aaa; margin-bottom: 1.5rem; text-transform: uppercase; letter-spacing: .05em; }
+
+    /* ── Form ── */
+    .field { margin-bottom: 1.2rem; }
+    label { display: block; font-size: 0.8rem; color: #888; margin-bottom: 0.4rem; text-transform: uppercase; letter-spacing: .04em; }
+    input[type="text"], input[type="number"], select {
+      width: 100%;
+      background: #111;
+      border: 1px solid #333;
+      border-radius: 6px;
+      color: #e8e8e8;
+      font-size: 0.95rem;
+      padding: 0.6rem 0.85rem;
+      outline: none;
+      transition: border-color .15s;
+    }
+    input:focus, select:focus { border-color: #4f8ef7; }
+
+    .row { display: flex; gap: 1rem; }
+    .row .field { flex: 1; }
+
+    .hint { font-size: 0.78rem; color: #555; margin-top: 0.3rem; }
+
+    /* ── Button ── */
+    button[type="submit"] {
+      width: 100%;
+      padding: 0.75rem;
+      background: #4f8ef7;
+      color: #fff;
+      font-size: 0.95rem;
+      font-weight: 600;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: background .15s, opacity .15s;
+      margin-top: 0.5rem;
+    }
+    button[type="submit"]:hover { background: #3a7de0; }
+    button[type="submit"]:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    /* ── Status banner ── */
+    #banner {
+      margin-top: 1.2rem;
+      padding: 0.75rem 1rem;
+      border-radius: 6px;
+      font-size: 0.9rem;
+      display: none;
+    }
+    #banner.success { background: #0d2a1a; border: 1px solid #1a5c35; color: #4caf7d; }
+    #banner.error   { background: #2a0d0d; border: 1px solid #5c1a1a; color: #f47c7c; }
+
+    /* ── Recent jobs ── */
+    .jobs-section { width: 100%; max-width: 540px; margin-top: 2rem; }
+    .jobs-section h3 { font-size: 0.8rem; color: #555; text-transform: uppercase; letter-spacing: .05em; margin-bottom: 0.75rem; }
+    .job-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.65rem 0.9rem;
+      background: #161616;
+      border: 1px solid #222;
+      border-radius: 8px;
+      margin-bottom: 0.5rem;
+      font-size: 0.85rem;
+    }
+    .job-row .origin { color: #aaa; max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .badge {
+      font-size: 0.72rem;
+      font-weight: 600;
+      padding: 0.2rem 0.55rem;
+      border-radius: 99px;
+      text-transform: uppercase;
+      letter-spacing: .03em;
+    }
+    .badge.running { background: #0d2a1a; color: #4caf7d; }
+    .badge.done    { background: #1a1a2a; color: #7c9cf4; }
+    .badge.error   { background: #2a0d0d; color: #f47c7c; }
+    .badge.pending { background: #1a1a1a; color: #888; }
+    .job-link { color: #4f8ef7; text-decoration: none; font-size: 0.8rem; margin-left: 0.75rem; }
+    .job-link:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+
+<nav>
+  <a href="/" class="brand">&#9670; Crawler</a>
+  <a href="/" class="active">New Crawl</a>
+  <a href="/search">Search</a>
+  <a href="#" id="navStatus" style="display:none">Status</a>
+</nav>
+
+<main class="hero">
+  <h1>Google <span>in a Day</span></h1>
+  <p>Crawl any website and search it in real time.</p>
+
+  <div class="card">
+    <h2>Start a new crawl job</h2>
+    <form id="crawlForm">
+      <div class="field">
+        <label for="origin_url">Origin URL</label>
+        <input id="origin_url" type="text" placeholder="https://example.com" required />
+        <p class="hint">The seed page. Crawler stays on the same host — subdomains count as different hosts. For Wikipedia, use <code style="color:#888">https://en.wikipedia.org/wiki/Main_Page</code>, not <code style="color:#888">https://www.wikipedia.org</code>.</p>
+      </div>
+
+      <div class="row">
+        <div class="field">
+          <label for="max_depth">Depth</label>
+          <input id="max_depth" type="number" value="2" min="1" max="5" required />
+          <p class="hint">Max link hops from origin.</p>
+        </div>
+        <div class="field">
+          <label for="rate_limit">Rate limit (req/s)</label>
+          <input id="rate_limit" type="number" value="5" min="1" max="20" required />
+        </div>
+        <div class="field">
+          <label for="max_queue_size">Queue size</label>
+          <input id="max_queue_size" type="number" value="500" min="10" max="5000" required />
+        </div>
+      </div>
+
+      <button type="submit" id="submitBtn">Start Crawl</button>
+      <div id="banner"></div>
+    </form>
+  </div>
+
+  <div class="jobs-section">
+    <h3>Recent jobs</h3>
+    <div id="jobList"><p style="color:#444;font-size:.85rem;">Loading…</p></div>
+  </div>
+</main>
+
+<script>
+  const form       = document.getElementById("crawlForm");
+  const submitBtn  = document.getElementById("submitBtn");
+  const banner     = document.getElementById("banner");
+  const jobList    = document.getElementById("jobList");
+
+  // Restore Status nav link if we have a known crawler_id
+  (function () {
+    const last = localStorage.getItem("lastCrawlerId");
+    const navStatus = document.getElementById("navStatus");
+    if (last) {
+      navStatus.href = `/status/${last}`;
+      navStatus.style.display = "";
+    }
+  })();
+
+  function showBanner(type, msg) {
+    banner.className = type;
+    banner.textContent = msg;
+    banner.style.display = "block";
+  }
+
+  async function loadJobs() {
+    try {
+      const res  = await fetch("/api/crawl/list");
+      const data = await res.json();
+      const jobs = data.jobs || [];
+      if (!jobs.length) {
+        jobList.innerHTML = '<p style="color:#444;font-size:.85rem;">No crawl jobs yet.</p>';
+        return;
+      }
+      jobList.innerHTML = jobs.slice(0, 8).map(j => `
+        <div class="job-row">
+          <span class="origin" title="${j.origin_url}">${j.origin_url}</span>
+          <span>
+            <span class="badge ${j.status}">${j.status}</span>
+            <a class="job-link" href="/status/${j.crawler_id}">Monitor &rarr;</a>
+          </span>
+        </div>
+      `).join("");
+    } catch {
+      jobList.innerHTML = '<p style="color:#444;font-size:.85rem;">Could not load jobs.</p>';
+    }
+  }
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    submitBtn.disabled = true;
+    submitBtn.textContent = "Starting…";
+    banner.style.display = "none";
+
+    const payload = {
+      origin_url:    document.getElementById("origin_url").value.trim(),
+      max_depth:     parseInt(document.getElementById("max_depth").value, 10),
+      rate_limit:    parseInt(document.getElementById("rate_limit").value, 10),
+      max_queue_size: parseInt(document.getElementById("max_queue_size").value, 10),
+    };
+
+    try {
+      const res  = await fetch("/api/crawl", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        showBanner("error", data.error || "Failed to start crawl.");
+      } else {
+        showBanner("success", `Job started — ID: ${data.crawler_id}`);
+        localStorage.setItem("lastCrawlerId", data.crawler_id);
+        setTimeout(() => window.location.href = `/status/${data.crawler_id}`, 800);
+      }
+    } catch (err) {
+      showBanner("error", `Network error: ${err.message}`);
+    } finally {
+      submitBtn.disabled = false;
+      submitBtn.textContent = "Start Crawl";
+      loadJobs();
+    }
+  });
+
+  loadJobs();
+</script>
+</body>
+</html>
