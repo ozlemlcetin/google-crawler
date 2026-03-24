@@ -1,5 +1,8 @@
 # Google in a Day — Web Crawler + Search Engine
 
+**Repository:** [https://github.com/ozlemlcetin/google-crawler](https://github.com/ozlemlcetin/google-crawler)
+
+
 A web crawler and search engine written in Python. Crawl any website to a configurable depth, build a word-frequency index, and search it in real time — even while the crawl is still running. Core logic uses only Python's standard library; Flask handles the web layer.
 
 ---
