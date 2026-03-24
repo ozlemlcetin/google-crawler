@@ -131,7 +131,15 @@ def api_start_crawl():
 
 @app.route("/api/crawl/<crawler_id>/status", methods=["GET"])
 def api_crawl_status(crawler_id):
-    """Read data/{crawler_id}.data off disk and return it. Always the last saved snapshot."""
+    """Return current job state. Checks in-memory job first (freshest data),
+    falls back to the last saved disk snapshot for jobs from previous sessions."""
+    with CrawlerJob._registry_lock:
+        job = CrawlerJob.all_jobs.get(crawler_id)
+
+    if job is not None:
+        return jsonify(job.get_state()), 200
+
+    # Fall back to disk (job from a previous server session).
     path = os.path.join("data", f"{crawler_id}.data")
     if not os.path.exists(path):
         return jsonify({"error": "crawler not found"}), 404
@@ -157,6 +165,44 @@ def api_stop_crawl(crawler_id):
     return jsonify({"crawler_id": crawler_id, "status": "stopping"}), 200
 
 
+@app.route("/api/crawl/<crawler_id>/resume", methods=["POST", "OPTIONS"])
+def api_resume_crawl(crawler_id):
+    """Resume an incomplete crawl from its saved frontier and visited-URL snapshot.
+
+    Creates a new crawl job pre-seeded with the frontier and visited set persisted
+    from the original job, then returns the new crawler_id. The original job's data
+    files are preserved unchanged so the history is still visible.
+
+    Returns 409 if the original job is still running or already completed.
+    """
+    if request.method == "OPTIONS":
+        return jsonify({}), 200
+
+    # Reject if the original job is still alive in memory.
+    with CrawlerJob._registry_lock:
+        existing = CrawlerJob.all_jobs.get(crawler_id)
+    if existing is not None and existing.status == "running":
+        return jsonify({"error": "crawl is already running"}), 409
+
+    state_path = os.path.join("data", f"{crawler_id}.data")
+    if not os.path.exists(state_path):
+        return jsonify({"error": "crawler not found"}), 404
+
+    try:
+        job = CrawlerJob.from_saved_state(crawler_id)
+        job.index_store = shared_index_store
+        job._index_lock = shared_index_lock
+        new_crawler_id = job.start()
+        return jsonify({
+            "crawler_id": new_crawler_id,
+            "resumed_from": crawler_id,
+        }), 201
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 409
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({"error": str(exc)}), 500
+
+
 @app.route("/api/crawl/list", methods=["GET"])
 def api_crawl_list():
     """List all known crawl jobs — in-memory ones first, then anything on disk from previous runs."""
@@ -177,10 +223,12 @@ def api_crawl_list():
         })
 
     # Supplement with any .data files not in memory (previous sessions).
-    # Skip *_visited.data files — those are plain-text URL lists, not job state.
+    # Skip *_visited.data and *_frontier.data — those are resume artifacts, not job state.
     try:
         for filename in os.listdir("data"):
-            if not filename.endswith(".data") or filename.endswith("_visited.data"):
+            if (not filename.endswith(".data")
+                    or filename.endswith("_visited.data")
+                    or filename.endswith("_frontier.data")):
                 continue
             crawler_id = filename[:-5]
             if crawler_id in seen_ids:

@@ -126,8 +126,15 @@ class CrawlerJob:
     _registry_lock = threading.RLock()
 
     def __init__(self, origin_url: str, max_depth: int,
-                 max_queue_size: int = 500, rate_limit: int = 5):
-        """Set up the job. Doesn't start crawling yet — call start() for that."""
+                 max_queue_size: int = 500, rate_limit: int = 5,
+                 resume_frontier: list | None = None,
+                 resume_visited: set | None = None):
+        """Set up the job. Doesn't start crawling yet — call start() for that.
+
+        resume_frontier: list of (url, origin_url, depth) tuples to pre-seed the queue.
+        resume_visited:  set of URLs already crawled in the previous job run.
+        Both are provided by from_saved_state(); leave None for a fresh crawl.
+        """
         self.origin_url = origin_url
         self.max_depth = max_depth
         self.max_queue_size = max_queue_size
@@ -159,6 +166,17 @@ class CrawlerJob:
         self._stop_event = threading.Event()
         self._start_time: float | None = None
 
+        # --- Resume state (provided by from_saved_state(); empty for a fresh crawl) ---
+        # _resume_frontier: (url, origin_url, depth) tuples to pre-seed the queue
+        # _resume_visited:  URLs already crawled — skip them on the resumed run
+        self._resume_frontier: list = list(resume_frontier) if resume_frontier else []
+        self._resume_visited: set = set(resume_visited) if resume_visited else set()
+
+        # Pending URL frontier: url -> {origin_url, depth}.
+        # Tracks what is currently in the queue so we can persist and restore it
+        # if the process is interrupted before the crawl finishes.
+        self._frontier_items: dict = {}
+
         # Ensure storage directories exist
         os.makedirs("data", exist_ok=True)
         os.makedirs(os.path.join("data", "storage"), exist_ok=True)
@@ -171,21 +189,57 @@ class CrawlerJob:
         """Kick off the crawl in a background thread and return a crawler_id.
 
         The ID is epoch_uuid8 — human-readable with lower collision risk than timestamp+thread-ident.
+        For a resumed crawl (from_saved_state()), the queue is pre-seeded from the saved frontier
+        and visited_urls is pre-populated so already-crawled pages are skipped.
         """
         self.crawler_id = f"{int(time.time())}_{uuid.uuid4().hex[:8]}"
 
         with CrawlerJob._registry_lock:
             CrawlerJob.all_jobs[self.crawler_id] = self
 
-        # Load visited URLs for this specific job (empty for a new job)
-        self._load_visited_urls()
+        if self._resume_visited:
+            # Resume path: pre-populate visited/enqueued from the saved snapshot.
+            with self._visited_lock:
+                self.visited_urls.update(self._resume_visited)
+                self.enqueued_urls.update(self._resume_visited)
+            self._log("Resuming crawl", {
+                "origin": self.origin_url,
+                "max_depth": self.max_depth,
+                "skipping_visited": len(self._resume_visited),
+            })
+        else:
+            # Fresh crawl: load any existing visited snapshot (normally empty for a new id).
+            self._load_visited_urls()
+            self._log(f"Crawl job created — origin={self.origin_url}, depth={self.max_depth}")
 
-        self._log(f"Crawl job created — origin={self.origin_url}, depth={self.max_depth}")
-
-        # Seed the queue with the origin URL at depth 0
-        self.url_queue.put((self.origin_url, self.origin_url, 0))
-        with self._visited_lock:
-            self.enqueued_urls.add(self.origin_url)
+        # Seed the queue: from saved frontier (resume) or from origin URL (fresh start).
+        if self._resume_frontier:
+            seeded = 0
+            for r_url, r_origin, r_depth in self._resume_frontier:
+                if r_url in self.visited_urls:
+                    continue  # already crawled in the previous run
+                try:
+                    self.url_queue.put_nowait((r_url, r_origin, r_depth))
+                    with self._visited_lock:
+                        self.enqueued_urls.add(r_url)
+                        self._frontier_items[r_url] = {"origin_url": r_origin, "depth": r_depth}
+                    seeded += 1
+                except queue.Full:
+                    break  # queue full — remaining frontier items dropped (back-pressure)
+            if seeded == 0:
+                # Entire frontier was already visited or the queue was full from the start.
+                # Fall back to re-crawling from the origin so the job isn't a no-op.
+                self.url_queue.put((self.origin_url, self.origin_url, 0))
+                with self._visited_lock:
+                    self.enqueued_urls.add(self.origin_url)
+                    self._frontier_items[self.origin_url] = {"origin_url": self.origin_url, "depth": 0}
+            self._log("Resume: frontier seeded", {"urls_seeded": seeded})
+        else:
+            # Normal fresh start: seed with the origin URL only.
+            self.url_queue.put((self.origin_url, self.origin_url, 0))
+            with self._visited_lock:
+                self.enqueued_urls.add(self.origin_url)
+                self._frontier_items[self.origin_url] = {"origin_url": self.origin_url, "depth": 0}
 
         with self._status_lock:
             self.status = "running"
@@ -214,6 +268,7 @@ class CrawlerJob:
                 "status": self.status,
                 "origin_url": self.origin_url,
                 "max_depth": self.max_depth,
+                "rate_limit": self.rate_limit,
                 "urls_processed": self.urls_processed,
                 "urls_per_second": urls_per_second,
                 "queue_depth": self.url_queue.qsize(),
@@ -240,6 +295,10 @@ class CrawlerJob:
             except queue.Empty:
                 # No URLs for 5 seconds — consider crawl complete
                 break
+
+            # Remove from frontier — this URL is now being processed (no longer pending).
+            with self._visited_lock:
+                self._frontier_items.pop(url, None)
 
             if self._stop_event.is_set():
                 self.url_queue.task_done()
@@ -288,6 +347,8 @@ class CrawlerJob:
                         self.url_queue.put_nowait((link, origin, depth + 1))
                         with self._visited_lock:
                             self.enqueued_urls.add(link)
+                            # Track in frontier so this URL can be restored on resume.
+                            self._frontier_items[link] = {"origin_url": origin, "depth": depth + 1}
                         with self._status_lock:
                             self.back_pressure_active = False
                     except queue.Full:
@@ -297,6 +358,7 @@ class CrawlerJob:
 
             self._persist_visited_urls()
             self._save_state()
+            self._save_frontier()  # persist pending queue for resume support
             self.url_queue.task_done()
 
         with self._status_lock:
@@ -417,17 +479,26 @@ class CrawlerJob:
 
     def _update_index(self, word_freq: dict, url: str,
                       origin_url: str, depth: int):
-        """Add this page's word frequencies into the shared in-memory index."""
+        """Add this page's word frequencies into the shared in-memory index.
+
+        Skips any (url, origin_url, depth) triple already present. This prevents
+        relevance-score inflation when the same page is crawled by a second job
+        (e.g., crawling the same site twice in the same server session).
+        """
         with self._index_lock:
             for word, frequency in word_freq.items():
+                if word not in self.index_store:
+                    self.index_store[word] = []
+                # Dedup: if this exact page+depth combo is already in the index, skip it.
+                if any(e["url"] == url and e.get("origin_url") == origin_url
+                       and e.get("depth") == depth for e in self.index_store[word]):
+                    continue
                 entry = {
                     "url": url,
                     "origin_url": origin_url,
                     "depth": depth,
                     "frequency": frequency,
                 }
-                if word not in self.index_store:
-                    self.index_store[word] = []
                 self.index_store[word].append(entry)
 
     def _save_index(self, word_freq: dict):
@@ -435,14 +506,16 @@ class CrawlerJob:
 
         Format: one line per entry — "word url origin_url depth frequency"
         Each shard is storage/{letter}.data. Written atomically via .tmp + rename.
+
+        Snapshots the relevant index data under the lock first, then releases the lock
+        before doing any disk I/O so other threads are not blocked during the write.
         """
         letters = {word[0] for word in word_freq if word and word[0].isalpha()}
 
+        # Snapshot under lock — I/O happens outside the lock below.
         with self._index_lock:
+            shards_to_write: dict = {}
             for letter in letters:
-                path = os.path.join("data", "storage", f"{letter}.data")
-
-                # Collect all in-memory entries for this letter
                 lines = []
                 for word, entries in self.index_store.items():
                     if not word or word[0] != letter:
@@ -453,14 +526,18 @@ class CrawlerJob:
                         depth = entry.get("depth", 0)
                         freq = entry.get("frequency", 0)
                         lines.append(f"{word} {url} {origin} {depth} {freq}")
+                shards_to_write[letter] = lines
 
-                tmp_path = path + ".tmp"
-                try:
-                    with open(tmp_path, "w", encoding="utf-8") as fh:
-                        fh.write("\n".join(lines))
-                    os.replace(tmp_path, path)
-                except OSError as exc:
-                    self._log("Index save error", {"letter": letter, "error": str(exc)})
+        # Disk writes happen outside the lock — keeps the critical section short.
+        for letter, lines in shards_to_write.items():
+            path = os.path.join("data", "storage", f"{letter}.data")
+            tmp_path = path + ".tmp"
+            try:
+                with open(tmp_path, "w", encoding="utf-8") as fh:
+                    fh.write("\n".join(lines))
+                os.replace(tmp_path, path)
+            except OSError as exc:
+                self._log("Index save error", {"letter": letter, "error": str(exc)})
 
     # ------------------------------------------------------------------
     # Internal: state persistence
@@ -485,7 +562,7 @@ class CrawlerJob:
         return os.path.join("data", f"{self.crawler_id}_visited.data")
 
     def _persist_visited_urls(self):
-        """Write visited URLs to disk as a per-job artifact/snapshot (not a resume mechanism)."""
+        """Write visited URLs to disk as a per-job snapshot. Used by from_saved_state() on resume."""
         path = self._visited_path()
         tmp_path = path + ".tmp"
         try:
@@ -509,6 +586,85 @@ class CrawlerJob:
                 self.visited_urls.update(urls)
         except OSError as exc:
             print(f"[crawler] Could not load {path}: {exc}")
+
+    def _save_frontier(self):
+        """Persist the current pending URL frontier to disk for resume support.
+
+        Saves url -> {origin_url, depth} for all URLs currently in the queue.
+        Called after every page so an interrupted crawl can be resumed from a
+        recent snapshot of what still needs to be fetched.
+        """
+        if not self.crawler_id:
+            return
+        path = os.path.join("data", f"{self.crawler_id}_frontier.data")
+        tmp_path = path + ".tmp"
+        try:
+            with self._visited_lock:
+                frontier_snapshot = dict(self._frontier_items)
+            with open(tmp_path, "w", encoding="utf-8") as fh:
+                json.dump(frontier_snapshot, fh)
+            os.replace(tmp_path, path)
+        except OSError as exc:
+            self._log("Frontier save error", {"error": str(exc)})
+
+    # ------------------------------------------------------------------
+    # Class method: resume a previous job
+    # ------------------------------------------------------------------
+
+    @classmethod
+    def from_saved_state(cls, original_crawler_id: str) -> "CrawlerJob":
+        """Create a new CrawlerJob pre-populated from a previous job's saved frontier
+        and visited-URL set.
+
+        The returned job has a fresh crawler_id (assigned by start()). The caller
+        must wire in index_store and _index_lock before calling start().
+
+        Raises ValueError if the state file cannot be read or the job already completed.
+        """
+        state_path = os.path.join("data", f"{original_crawler_id}.data")
+        try:
+            with open(state_path, "r", encoding="utf-8") as fh:
+                state = json.load(fh)
+        except (OSError, json.JSONDecodeError) as exc:
+            raise ValueError(f"Cannot load state for {original_crawler_id}: {exc}") from exc
+
+        if state.get("status") == "done":
+            raise ValueError("Cannot resume a completed crawl (status: done)")
+
+        # Load the persisted visited-URL snapshot.
+        resume_visited: set = set()
+        visited_path = os.path.join("data", f"{original_crawler_id}_visited.data")
+        if os.path.exists(visited_path):
+            try:
+                with open(visited_path, "r", encoding="utf-8") as fh:
+                    resume_visited = {line.strip() for line in fh if line.strip()}
+            except OSError:
+                pass
+
+        # Load the persisted frontier: dict of url -> {origin_url, depth}.
+        resume_frontier: list = []
+        frontier_path = os.path.join("data", f"{original_crawler_id}_frontier.data")
+        if os.path.exists(frontier_path):
+            try:
+                with open(frontier_path, "r", encoding="utf-8") as fh:
+                    frontier_data: dict = json.load(fh)
+                resume_frontier = [
+                    (url, info["origin_url"], info["depth"])
+                    for url, info in frontier_data.items()
+                    if url and isinstance(info, dict)
+                    and "origin_url" in info and "depth" in info
+                ]
+            except (OSError, json.JSONDecodeError, KeyError):
+                pass  # frontier file missing or corrupt — will re-crawl from origin
+
+        return cls(
+            origin_url=state["origin_url"],
+            max_depth=state["max_depth"],
+            max_queue_size=state.get("max_queue_size", 500),
+            rate_limit=state.get("rate_limit", 5),
+            resume_frontier=resume_frontier,
+            resume_visited=resume_visited,
+        )
 
     # ------------------------------------------------------------------
     # Internal: logging
