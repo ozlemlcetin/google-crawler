@@ -66,6 +66,7 @@
     .status-badge.done    { background: #1a1a2a; color: #7c9cf4; }
     .status-badge.error   { background: #2a0d0d; color: #f47c7c; }
     .status-badge.pending { background: #1a1a1a; color: #888; }
+    .status-badge.stopped { background: #1a1a1a; color: #888; }
 
     @keyframes pulse {
       0%, 100% { opacity: 1; }
@@ -246,6 +247,7 @@
     <a href="/search" class="btn btn-primary">Search Index &rarr;</a>
     <a href="/" class="btn btn-outline">New Crawl</a>
     <button id="btnStop" class="btn btn-stop" style="display:none;background:#7c2020;color:#fff;" onclick="stopCrawl()">Stop Crawl</button>
+    <button id="btnResume" class="btn btn-outline" style="display:none;" onclick="resumeCrawl()">Resume Crawl</button>
     <span id="connectionBadge" class="conn-badge reconnecting">○ Connecting…</span>
   </div>
 
@@ -309,7 +311,8 @@
     document.getElementById("statDepth").textContent  = data.max_depth  ?? "—";
     document.getElementById("statUPS").textContent    = data.urls_per_second ?? 0;
 
-    document.getElementById("btnStop").style.display = (s === "running") ? "inline-block" : "none";
+    document.getElementById("btnStop").style.display   = (s === "running") ? "inline-block" : "none";
+    document.getElementById("btnResume").style.display = (s === "stopped") ? "inline-block" : "none";
 
     const maxQ = data.max_queue_size ?? 500;
     const qd   = Math.min(data.queue_depth ?? 0, maxQ);
@@ -418,6 +421,28 @@
       console.error("Stop failed:", err);
       btn.disabled = false;
       btn.textContent = "Stop Crawl";
+    }
+  }
+
+  // ── Resume button ────────────────────────────────────────────────────────────
+  async function resumeCrawl() {
+    const btn = document.getElementById("btnResume");
+    btn.disabled = true;
+    btn.textContent = "Resuming…";
+    try {
+      const res  = await fetch(`/api/crawl/${crawlerId}/resume`, { method: "POST" });
+      const data = await res.json();
+      if (res.ok) {
+        window.location.href = `/status/${data.crawler_id}`;
+      } else {
+        alert(data.error || "Resume failed.");
+        btn.disabled = false;
+        btn.textContent = "Resume Crawl";
+      }
+    } catch (err) {
+      alert("Network error: " + err.message);
+      btn.disabled = false;
+      btn.textContent = "Resume Crawl";
     }
   }
 
