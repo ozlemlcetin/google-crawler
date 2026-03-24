@@ -293,7 +293,7 @@ class CrawlerJob:
             try:
                 url, origin, depth = self.url_queue.get(timeout=1)
             except queue.Empty:
-                # No URLs for 5 seconds — consider crawl complete
+                # No URLs for 1 second — queue is empty, consider crawl complete
                 break
 
             # Remove from frontier — this URL is now being processed (no longer pending).
