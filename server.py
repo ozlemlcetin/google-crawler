@@ -62,34 +62,8 @@ def page_status(crawler_id):
 
 @app.route("/search")
 def page_search():
-    """Return JSON results if ?query= is present, otherwise render the search page."""
-    query = request.args.get("query", request.args.get("q", "")).strip()
-    if not query:
-        return render_template("search.html")
-
-    try:
-        page = int(request.args.get("page", 1))
-    except ValueError:
-        page = 1
-    try:
-        per_page = int(request.args.get("per_page", 20))
-    except ValueError:
-        per_page = 20
-
-    t0 = time.perf_counter()
-    all_results = search(query, shared_index_store, shared_index_lock)
-    page_data = paginate(all_results, page=page, per_page=per_page)
-    elapsed_ms = round((time.perf_counter() - t0) * 1000, 2)
-
-    results = page_data["items"]
-    return jsonify({
-        "results": results,
-        "total": page_data["total_count"],
-        "page": page_data["page"],
-        "per_page": page_data["per_page"],
-        "total_pages": page_data["total_pages"],
-        "elapsed_ms": elapsed_ms,
-    }), 200
+    """Always render the search page. The JS reads ?q= and calls /api/search for results."""
+    return render_template("search.html")
 
 
 # ---------------------------------------------------------------------------

@@ -87,15 +87,14 @@ Search runs across all indexed data from every crawl job in the current session,
 **Search scoring**
 `relevance_score = (frequency × 10) + 1000 - (depth × 5)`. Title tokens are weighted 3× during indexing in `crawler.py`. Results are keyed by `(relevant_url, origin_url, depth)` so the same URL discovered via different origin/depth combinations is returned as separate entries.
 
-**Resume**
-Partial persistence — visited URLs are saved per job; the queue is not persisted. This avoids re-crawling already-visited pages if the same job ID is reused, but is not a full resume.
+**Persistence**
+Visited URLs are written to disk as a snapshot artifact per job (`<crawler_id>_visited.data`). Queue state is not persisted. There is no resume/restart workflow in v1 — each call to `start()` creates a fresh `crawler_id`, so restarting a crawl always begins from scratch.
 
 ---
 
 ## Known Limitations
 - Single worker thread per job; rate limit is per-job, not global
 - Back pressure drops URLs (lossy); it does not block the producer
-- Resume is partial: visited URLs are persisted, but the queue is not
+- No resume workflow: visited URLs are saved as artifacts per job, but queue state is not persisted and there is no way to restart a job from where it left off
 - URL canonicalization is intentionally minimal: www-prefix and trailing-slash normalization only
 
-The repository includes a small sample index under data/storage/ so the raw storage format and search behavior can be inspected immediately.

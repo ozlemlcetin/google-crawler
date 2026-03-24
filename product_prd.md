@@ -196,7 +196,7 @@ All writes to `index_store` and `visited_urls` need to hold the corresponding `R
 | Back pressure | Queue never exceeds 500 items; URLs are dropped when full (`put_nowait`) to prevent unbounded memory growth |
 | Thread safety | No race conditions, no data corruption under concurrent read/write |
 | Rate limiting | Crawler does not exceed 5 HTTP requests/second |
-| State persistence | Each crawl job writes a valid `.data` JSON file; visited URLs persisted per job (partial persistence — visited URLs saved, queue not persisted) |
+| State persistence | Each crawl job writes a valid `.data` JSON file; visited URLs saved to disk as a per-job artifact. Queue is not persisted. There is no resume workflow in v1 — each `start()` call creates a fresh job. |
 | Paginated results | Search UI returns at least 10 results per page with navigation |
 
 ---
@@ -215,4 +215,4 @@ All writes to `index_store` and `visited_urls` need to hold the corresponding `R
 
 1. Should the crawler respect `robots.txt`? Not currently implemented; recommended for ethical use.
 2. Multiple concurrent jobs are supported — each has its own visited set and rate limiter.
-3. Visited URLs are persisted per job (partial resume only — the queue is not saved).
+3. Visited URLs are saved to disk as a per-job artifact (not a resume mechanism — the queue is not persisted and `start()` always creates a fresh job).

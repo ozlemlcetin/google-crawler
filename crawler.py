@@ -36,32 +36,34 @@ class _LinkParser(HTMLParser):
 
 
 class _TextParser(HTMLParser):
-    """Extract visible text and the <title> from a page. Skips script/style/etc."""
+    """Extract visible text and the <title> from a page. Skips script/style."""
 
-    # skip these tags entirely — we don't want JS or CSS tokens in the index
-    _SKIP_TAGS = {"script", "style", "head", "meta", "link"}
+    # Tags whose full content (open→close) should be ignored.
+    # Void elements (meta, link) produce no text data, so they need no entry here.
+    _SKIP_TAGS = {"script", "style"}
 
     def __init__(self):
         super().__init__()
         self.title = ""
         self._in_title = False
-        self._skip = False
+        self._skip_depth = 0   # depth counter — handles nested skips robustly
         self._text_parts = []
 
     def handle_starttag(self, tag, attrs):
-        if tag == "title":
-            self._in_title = True
         if tag in self._SKIP_TAGS:
-            self._skip = True
+            self._skip_depth += 1
+        elif tag == "title":
+            self._in_title = True
 
     def handle_endtag(self, tag):
-        if tag == "title":
-            self._in_title = False
         if tag in self._SKIP_TAGS:
-            self._skip = False
+            if self._skip_depth > 0:
+                self._skip_depth -= 1
+        elif tag == "title":
+            self._in_title = False
 
     def handle_data(self, data):
-        if self._skip:
+        if self._skip_depth > 0:
             return
         text = data.strip()
         if not text:
@@ -234,7 +236,7 @@ class CrawlerJob:
                 break
 
             try:
-                url, origin, depth = self.url_queue.get(timeout=5)
+                url, origin, depth = self.url_queue.get(timeout=1)
             except queue.Empty:
                 # No URLs for 5 seconds — consider crawl complete
                 break
@@ -483,7 +485,7 @@ class CrawlerJob:
         return os.path.join("data", f"{self.crawler_id}_visited.data")
 
     def _persist_visited_urls(self):
-        """Write visited URLs to disk so we can resume without re-crawling."""
+        """Write visited URLs to disk as a per-job artifact/snapshot (not a resume mechanism)."""
         path = self._visited_path()
         tmp_path = path + ".tmp"
         try:
