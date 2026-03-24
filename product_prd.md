@@ -38,14 +38,14 @@ Build a working web crawler and search engine from scratch using Python. The sys
 |----|-------------|
 | F-01 | Accept an **origin URL** and **depth k** as input parameters. |
 | F-02 | Recursively crawl all reachable pages up to depth k from the origin. |
-| F-03 | Never crawl the same URL twice. The visited set must be thread-safe. |
+| F-03 | Never crawl the same URL twice within the same crawl job. The visited set must be thread-safe. |
 | F-04 | Enforce a **configurable queue depth (default 500, range 10–5000)** to apply back pressure. |
 | F-05 | Enforce a **configurable rate limit per job (default 5 req/s, validated server-side)** via `time.sleep(1/rate_limit)`. Multiple concurrent jobs each apply their own rate limit independently. |
 | F-06 | Extract and store a **word frequency index** for each crawled page. |
 | F-07 | Parse the page title during crawling; index title tokens with 3× weight (not stored as a separate metadata field). |
 | F-08 | Log crawl state to a JSON file named `[epochtime_uuid8].data` in the `data/` directory. |
 | F-09 | Handle HTTP errors (4xx, 5xx), timeouts, and malformed URLs gracefully without crashing. |
-| F-10 | On stop signal, worker exits at the next safe checkpoint and persists final state. Queue is not fully drained; remaining URLs are discarded. |
+| F-10 | On stop signal, the worker exits at the next safe checkpoint and persists final state. Pending frontier is saved for later resume; the current job does not continue draining the queue after stop. |
 
 ### 4.2 Searcher
 
